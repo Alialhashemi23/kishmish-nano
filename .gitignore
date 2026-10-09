@@ -1,0 +1,10 @@
+/build/
+/dist/
+*.exe
+*.opk
+*.sav
+*.sav.tmp
+*.ppm
+*.log
+__pycache__/
+.DS_Store

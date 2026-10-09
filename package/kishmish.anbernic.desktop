@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Kishmish Nano
+Comment=A cute little bean with concerning thoughts
+Exec=launch.sh
+Icon=kishmish
+Terminal=false
+Type=Application
+Categories=games;
+

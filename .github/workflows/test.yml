@@ -1,0 +1,16 @@
+name: Core tests
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test portable game core
+        run: sh tests/run.sh
+      - name: Compile SDL backend
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl1.2-dev
+          gcc -std=c99 -Wall -Wextra -Werror src/game.c src/main.c -o build/kishmish-sdl $(sdl-config --cflags --libs)
