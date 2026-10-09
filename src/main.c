@@ -8,13 +8,13 @@
 #include <mmsystem.h>
 static char sounddir[1024];
 static void play_meow(int id) {
-    const char *names[] = {"", "snack", "pet", "play"};
+    const char *names[] = {"", "snack", "pet", "play", "secret"};
     char wav[1200];
     if (!game_sound_enabled()) {
         PlaySoundA(NULL, NULL, 0);
         return;
     }
-    if (id < 1 || id > 3)
+    if (id < 1 || id > 4)
         return;
     snprintf(wav, sizeof wav, "%s%s.wav", sounddir, names[id]);
     PlaySoundA(wav, NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
@@ -33,9 +33,13 @@ static LRESULT CALLBACK proc(HWND w, UINT m, WPARAM k, LPARAM l) {
     if (m == WM_KEYDOWN && !(l & (1L << 30))) {
         if (k == VK_ESCAPE || k == 'P')
             game_key(4);
-        if (k == VK_LEFT || k == VK_UP || k == 'A')
+        if (k == VK_LEFT || k == 'A')
             game_key(-1);
-        if (k == VK_RIGHT || k == VK_DOWN || k == 'D')
+        if (k == VK_UP)
+            game_key(-2);
+        if (k == VK_DOWN)
+            game_key(5);
+        if (k == VK_RIGHT || k == 'D')
             game_key(1);
         if (k == VK_RETURN || k == VK_SPACE || k == 'Z')
             game_key(2);
@@ -127,8 +131,8 @@ int main(int argc, char **argv) {
 #else
 #include <SDL/SDL.h>
 #include <sys/stat.h>
-static Uint8 *clips[3];
-static Uint32 lengths[3], audio_pos, audio_len;
+static Uint8 *clips[4];
+static Uint32 lengths[4], audio_pos, audio_len;
 static Uint8 *audio_data;
 static int audio_ready;
 static void audio_callback(void *unused, Uint8 *stream, int len) {
@@ -158,8 +162,9 @@ static void audio_init(void) {
         fprintf(stderr, "Audio open failed: %s\n", SDL_GetError());
         return;
     }
-    const char *names[] = {"sounds/snack.wav", "sounds/pet.wav", "sounds/play.wav"};
-    for (int i = 0; i < 3; i++) {
+    const char *names[] = {"sounds/snack.wav", "sounds/pet.wav", "sounds/play.wav",
+                           "sounds/secret.wav"};
+    for (int i = 0; i < 4; i++) {
         SDL_AudioSpec spec;
         if (!SDL_LoadWAV(names[i], &spec, &clips[i], &lengths[i])) {
             fprintf(stderr, "Meow load failed: %s\n", SDL_GetError());
@@ -184,7 +189,7 @@ static void play_meow(int id) {
         SDL_UnlockAudio();
         return;
     }
-    if (id < 1 || id > 3)
+    if (id < 1 || id > 4)
         return;
     SDL_LockAudio();
     audio_data = clips[id - 1];
@@ -195,7 +200,7 @@ static void play_meow(int id) {
 static void audio_close(void) {
     if (audio_ready)
         SDL_CloseAudio();
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 4; i++)
         if (clips[i])
             SDL_FreeWAV(clips[i]);
 }
@@ -241,9 +246,13 @@ int main(void) {
                 SDLKey k = e.key.keysym.sym;
                 if (k == SDLK_ESCAPE || k == SDLK_q || k == SDLK_s)
                     game_key(4);
-                if (k == SDLK_LEFT || k == SDLK_l || k == SDLK_UP || k == SDLK_u)
+                if (k == SDLK_LEFT || k == SDLK_l)
                     game_key(-1);
-                if (k == SDLK_RIGHT || k == SDLK_r || k == SDLK_DOWN || k == SDLK_d)
+                if (k == SDLK_UP || k == SDLK_u)
+                    game_key(-2);
+                if (k == SDLK_DOWN || k == SDLK_d)
+                    game_key(5);
+                if (k == SDLK_RIGHT || k == SDLK_r)
                     game_key(1);
                 if (k == SDLK_LCTRL || k == SDLK_RETURN || k == SDLK_a)
                     game_key(2);

@@ -39,3 +39,7 @@ for name,base,duration in [('snack',620,.34),('pet',760,.46),('play',880,.30)]:
   samples.append(struct.pack('<h',sample))
  for parent in [r/'package/sounds']:
   with wave.open(str(parent/(name+'.wav')),'wb') as f:f.setparams((1,2,22050,0,'NONE','not compressed'));f.writeframes(b''.join(samples))
+
+# Original secret vocal homage.
+import runpy
+runpy.run_path(str(root/'tools/generate_secret.py'), run_name='__main__')
