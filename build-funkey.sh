@@ -8,7 +8,7 @@ cp "$SDK_SYSROOT/lib/libc.so" build/opk/lib/libc.so
 cp "$SDK_SYSROOT/lib/libc.so" build/opk/lib/ld-musl-armhf.so.1
 cp -L "$SDK_SYSROOT/usr/lib/libSDL-1.2.so.0" build/opk/lib/
 chmod +x build/opk/lib/ld-musl-armhf.so.1
-$CC ${CFLAGS:-} -std=c99 -Wall -Wextra -O2 src/game.c src/main.c -o build/opk/kishmish -lSDL
+$CC ${CFLAGS:-} -std=c99 -Wall -Wextra -O2 src/game.c src/personality.c src/main.c -o build/opk/kishmish -lSDL
 cp package/kishmish.funkey-s.desktop package/kishmish.anbernic.desktop build/opk/
 cp package/kishmish.png package/launch.sh build/opk/
 chmod +x build/opk/launch.sh

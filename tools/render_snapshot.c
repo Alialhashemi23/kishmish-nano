@@ -1,4 +1,5 @@
 #include "../src/game.h"
+#include "../src/personality.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,12 @@ int main(int argc, char **argv) {
     remove("build/preview-never-created.sav");
     game_init("build/preview-never-created.sav");
     srand(7);
+    personality_init(7);
+    const char *poses[] = {"idle",    "blink",   "ear",   "tail",  "groom", "loaf",
+                           "curious", "gremlin", "happy", "munch", "secret"};
+    for (int i = 0; i <= POSE_SECRET; i++)
+        if (!strcmp(argv[1], poses[i]))
+            personality_pose_start((CatPose)i);
     if (!strcmp(argv[1], "sleep"))
         pet.sleeping = 1;
     if (!strcmp(argv[1], "chaos"))

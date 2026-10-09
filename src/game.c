@@ -1,4 +1,5 @@
 #include "game.h"
+#include "personality.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +10,9 @@ static const uint32_t pal[] = {0xe0edb3, 0xa9bf70, 0x52734b, 0x203c36};
 static char savepath[1024], message[40] = "HELLO. I AM KISHMISH.";
 static int selected, star_selected, frame, playing, target = 1, pending_sound;
 static int paused, pause_selected, quit_requested, sound_enabled = 1;
+const char *game_message(void) {
+    return message;
+}
 int game_should_quit(void) {
     return quit_requested;
 }
@@ -54,6 +58,12 @@ static void text(int x, int y, const char *s, int c) {
         else if (*s == '!') {
             rect(x + 2, y, 1, 5, c);
             rect(x + 2, y + 6, 1, 1, c);
+        } else if (*s == '?') {
+            rect(x, y, 4, 1, c);
+            rect(x + 4, y + 1, 1, 2, c);
+            rect(x + 2, y + 3, 2, 1, c);
+            rect(x + 2, y + 4, 1, 1, c);
+            rect(x + 2, y + 6, 1, 1, c);
         } else if (*s == '-')
             rect(x, y + 3, 5, 1, c);
     }
@@ -68,8 +78,8 @@ int game_save(void) {
     if (!f)
         return 0;
     pet.stamp = (long long)time(NULL);
-    int ok = fprintf(f, "KISHMISH1 %d %d %d %d %d %d %lld\n", pet.food, pet.joy, pet.energy,
-                     pet.chaos, pet.sleeping, pet.meals, pet.stamp) > 0;
+    int ok = fprintf(f, "KISHMISH1 %d %d %d %d %d %d %lld %d %d\n", pet.food, pet.joy, pet.energy,
+                     pet.chaos, pet.sleeping, pet.meals, pet.stamp, pet.affection, pet.visits) > 0;
     if (fclose(f))
         ok = 0;
     if (!ok)
@@ -81,13 +91,19 @@ int game_save(void) {
 }
 void game_init(const char *path) {
     snprintf(savepath, sizeof savepath, "%s", path);
-    pet = (Pet){80, 80, 90, 0, 0, 0, (long long)time(NULL)};
+    pet = (Pet){.food = 80, .joy = 80, .energy = 90, .stamp = (long long)time(NULL)};
+    say("HELLO. I AM KISHMISH.");
+    personality_init((uint32_t)time(NULL));
     FILE *f = fopen(path, "r");
-    Pet p;
+    Pet p = {0};
     char magic[20];
     if (f) {
         int n = fscanf(f, "%19s %d %d %d %d %d %d %lld", magic, &p.food, &p.joy, &p.energy,
                        &p.chaos, &p.sleeping, &p.meals, &p.stamp);
+        int extension = fscanf(f, "%d %d", &p.affection, &p.visits);
+        if (extension != 2 || p.affection < 0 || p.affection > 100 || p.visits < 0 ||
+            p.visits > 999999)
+            p.affection = p.visits = 0;
         fclose(f);
         if (n == 8 && !strcmp(magic, "KISHMISH1") && p.food >= 0 && p.food <= 100 && p.joy >= 0 &&
             p.joy <= 100 && p.energy >= 0 && p.energy <= 100 && p.chaos >= 0 && p.chaos <= 100 &&
@@ -101,7 +117,9 @@ void game_init(const char *path) {
             pet.food = clamp(pet.food - (int)(gap / 180));
             pet.joy = clamp(pet.joy - (int)(gap / 240));
             pet.energy = clamp(pet.energy + (pet.sleeping ? 1 : -1) * (int)(gap / 120));
-            say("YOU CAME BACK. GOOD.");
+            if (pet.visits < 999999)
+                pet.visits++;
+            say(personality_greeting(&pet, gap));
         }
     }
     elapsed = anim = autosave = 0;
@@ -112,6 +130,11 @@ void game_init(const char *path) {
 void game_tick(double dt) {
     if (paused)
         return;
+    if (dt <= 0)
+        return;
+    const char *thought = personality_tick(dt, &pet, playing);
+    if (thought)
+        say(thought);
     anim += dt;
     frame = (int)(anim * 6);
     elapsed += dt;
@@ -132,11 +155,28 @@ void game_tick(double dt) {
 }
 void game_key(int key) {
     if (key == 4) {
+        personality_reset_secret();
         paused = !paused;
         pause_selected = 0;
         pending_sound = 0;
         return;
     }
+    if (paused || playing || pet.sleeping)
+        personality_reset_secret();
+    else {
+        int secret = personality_secret(key);
+        if (secret) {
+            if (secret == 1) {
+                pending_sound = 4;
+                say("BURENYUU! ... NYA?");
+            }
+            return;
+        }
+    }
+    if (key == -2)
+        key = -1;
+    if (key == 5)
+        key = 1;
     if (paused) {
         if (key == 3) {
             paused = 0;
@@ -176,10 +216,11 @@ void game_key(int key) {
                 pet.joy = clamp(pet.joy + 12);
                 pet.energy = clamp(pet.energy - 3);
                 pet.chaos = clamp(pet.chaos - 2);
-                say(pet.chaos > 30 ? "I SPARED THE MOON." : "YOU FOUND MY STAR!");
+                pet.affection = clamp(pet.affection + 1);
+                say(personality_react(REACT_WIN, &pet));
             } else {
                 pet.joy = clamp(pet.joy + 2);
-                say("A VERY GOOD WRONG STAR.");
+                say(personality_react(REACT_MISS, &pet));
             }
             pending_sound = 3;
             playing = 0;
@@ -193,7 +234,8 @@ void game_key(int key) {
         return;
     if (selected == 2) {
         pet.sleeping = !pet.sleeping;
-        say(pet.sleeping ? "DO NOT TRUST THE MOON." : "I DREAMED OF SNACKS.");
+        personality_reset_secret();
+        say(pet.sleeping ? "DO NOT TRUST THE MOON." : personality_react(REACT_WAKE, &pet));
     } else if (pet.sleeping)
         say("ZZZ. COME BACK SOON.");
     else if (selected == 0) {
@@ -201,12 +243,15 @@ void game_key(int key) {
             say("FULL. EMOTIONALLY EMPTY.");
         else {
             pet.food = clamp(pet.food + 18);
-            pet.meals++;
+            if (pet.meals < 1000000)
+                pet.meals++;
+            pet.affection = clamp(pet.affection + 1);
             pending_sound = 1;
             pet.chaos = clamp(pet.chaos + 1);
-            say(pet.chaos > 30 ? "ANOTHER OFFERING. GOOD." : "A SNACK! FOR ME?!");
+            say(personality_react(REACT_FEED, &pet));
         }
     } else if (selected == 1) {
+        personality_reset_secret();
         playing = 1;
         star_selected = 0;
         target = rand() % 4;
@@ -215,7 +260,8 @@ void game_key(int key) {
         pending_sound = 2;
         pet.joy = clamp(pet.joy + 5);
         pet.chaos = clamp(pet.chaos - 1);
-        say(pet.chaos > 30 ? "YOUR SECRETS ARE SAFE." : "YOU ARE MY FAVORITE.");
+        pet.affection = clamp(pet.affection + 1);
+        say(personality_react(REACT_PET, &pet));
     }
     game_save();
 }
@@ -240,7 +286,7 @@ void game_draw(void) {
          : pet.chaos > 25 ? "ODD LITTLE GUY"
                           : "SWEET LITTLE GUY",
          2);
-    text(132, 48, "DAY ONE FRIEND", 2);
+    text(132, 48, pet.affection >= 20 ? "MY FAVORITE HUMAN" : "LITTLE CAT PAL", 2);
     /* Code-drawn Siamese kitten: pointed ears, seal mask, cream bib and curled tail. */
     rect(13, 72, 214, 100, 1);
     rect(17, 76, 206, 92, 0);
@@ -253,25 +299,40 @@ void game_draw(void) {
     rect(192, 117, 5, 9, 3);
     for (int x = 21; x < 220; x += 16)
         rect(x, 160, 8, 1, 1);
-    int bob = pet.sleeping ? 2 : (frame % 8 < 4 ? 0 : -2), y = 83 + bob;
+    CatPose pose = personality_pose();
+    int beat = (int)(personality_pose_time() * 8) % 2;
+    int loaf = pet.sleeping || pose == POSE_LOAF;
+    int bob = loaf ? 0 : (frame % 8 < 4 ? 0 : -2), y = 83 + bob;
+    int tail_dx = pose == POSE_TAIL ? (beat ? 4 : -2) : 0;
+    int tail_dy = pose == POSE_TAIL ? (beat ? -4 : 2) : 0;
     rect(82, 157, 88, 3, 1);
     /* Curled dark tail behind a small seated body. */
-    rect(143, y + 49, 19, 8, 3);
-    rect(157, y + 34, 8, 20, 3);
-    rect(153, y + 29, 10, 8, 3);
-    rect(149, y + 30, 6, 5, 2);
-    rect(160, y + 39, 3, 9, 2);
-    rect(99, y + 44, 42, 29, 3);
-    rect(103, y + 44, 34, 26, 1);
-    rect(108, y + 47, 24, 22, 0);
+    rect(143, y + 49, 19 + tail_dx, 8, 3);
+    rect(157 + tail_dx, y + 34 + tail_dy, 8, 20 - tail_dy, 3);
+    rect(153 + tail_dx, y + 29 + tail_dy, 10, 8, 3);
+    rect(149 + tail_dx, y + 30 + tail_dy, 6, 5, 2);
+    rect(160 + tail_dx, y + 39 + tail_dy, 3, 9, 2);
+    if (loaf) {
+        rect(91, 139, 58, 17, 3);
+        rect(95, 137, 50, 17, 1);
+        rect(106, 141, 29, 11, 0);
+        rect(100, 152, 13, 4, 2);
+        rect(129, 152, 13, 4, 2);
+        y += 8;
+    } else {
+        rect(99, y + 44, 42, 29, 3);
+        rect(103, y + 44, 34, 26, 1);
+        rect(108, y + 47, 24, 22, 0);
+    }
     /* Short triangular ears, stepped at the same pixel scale as the face. */
     for (int j = 0; j < 10; j++) {
         rect(88, y + j * 2, 4 + j * 2, 2, 3);
-        rect(148 - j * 2, y + j * 2, 4 + j * 2, 2, 3);
+        rect(148 - j * 2, y + j * 2 + (pose == POSE_EAR && beat && j < 5 ? 6 : 0), 4 + j * 2, 2, 3);
     }
     for (int j = 0; j < 6; j++) {
         rect(92, y + 6 + j * 2, 2 + j * 2, 2, 1);
-        rect(146 - j * 2, y + 6 + j * 2, 2 + j * 2, 2, 1);
+        rect(146 - j * 2, y + 6 + j * 2 + (pose == POSE_EAR && beat && j < 3 ? 5 : 0), 2 + j * 2, 2,
+             1);
     }
     /* Broad kitten cheeks, pale outer fur, pointed Siamese face mask. */
     rect(94, y + 15, 52, 39, 3);
@@ -283,18 +344,33 @@ void game_draw(void) {
     rect(105, y + 43, 30, 8, 2);
     rect(112, y + 47, 16, 6, 2);
     /* Large bright eyes with dark pupils and tiny catchlights. */
-    if (pet.sleeping) {
+    if (pet.sleeping || pose == POSE_BLINK || pose == POSE_GROOM || (pose == POSE_LOAF && beat)) {
         rect(101, y + 33, 12, 2, 3);
         rect(127, y + 33, 12, 2, 3);
         rect(101, y + 31, 2, 2, 3);
         rect(137, y + 31, 2, 2, 3);
-        text(161, y + 5, "Z", 3);
-        text(174, y - 4, "Z", 2);
+        if (pet.sleeping) {
+            text(161, y + 5, "Z", 3);
+            text(174, y - 4, "Z", 2);
+        }
+    } else if (pose == POSE_HAPPY || pose == POSE_SECRET) {
+        for (int x = 101; x <= 127; x += 26) {
+            rect(x, y + 31, 3, 3, 3);
+            rect(x + 3, y + 28, 6, 3, 3);
+            rect(x + 9, y + 31, 3, 3, 3);
+        }
+    } else if (pose == POSE_GREMLIN) {
+        rect(101, y + 31, 12, 5, 0);
+        rect(127, y + 31, 12, 5, 0);
+        rect(101, y + 29, 7, 2, 3);
+        rect(132, y + 29, 7, 2, 3);
+        rect(108, y + 31, 3, 5, 3);
+        rect(129, y + 31, 3, 5, 3);
     } else {
         for (int x = 101; x <= 127; x += 26) {
             rect(x, y + 27, 12, 13, 3);
             rect(x + 2, y + 29, 8, 9, 0);
-            rect(x + 6, y + 30, 3, 8, 3);
+            rect(x + (pose == POSE_CURIOUS ? 8 : 6), y + 30, 3, 8, 3);
             rect(x + 3, y + 29, 3, 3, 0);
         }
     }
@@ -305,19 +381,53 @@ void game_draw(void) {
     rect(119, y + 42, 2, 3, 3);
     rect(115, y + 46, 4, 2, 3);
     rect(121, y + 46, 4, 2, 3);
+    if (pose == POSE_MUNCH) {
+        rect(115, y + 44, 10, beat ? 6 : 3, 3);
+        rect(117, y + 45, 6, 2, 1);
+        rect(140, y + 49, 7, 5, 2);
+        rect(147, y + 45 + (beat ? 2 : 0), 2, 2, 2);
+    }
+    if (pose == POSE_SECRET) {
+        rect(115, y + 44, 11, 9, 3);
+        rect(118, y + 47, 5, 6, 2);
+        text(166, 89, "NYA!", 3);
+    }
+    if (pose == POSE_CURIOUS)
+        text(164, 90, "?", 3);
+    if (pose == POSE_HAPPY) {
+        rect(163, 91, 3, 3, 3);
+        rect(169, 91, 3, 3, 3);
+        rect(162, 94, 11, 3, 3);
+        rect(164, 97, 7, 2, 3);
+        rect(166, 99, 3, 2, 3);
+    }
     /* Whiskers extend past the cheek silhouette. */
     rect(76, y + 35, 17, 2, 3);
     rect(79, y + 42, 14, 2, 3);
     rect(147, y + 35, 17, 2, 3);
     rect(147, y + 42, 14, 2, 3);
     /* Seal-point front paws, pale toes, and a cream chest. */
-    rect(101, y + 64, 16, 10, 3);
-    rect(123, y + 64, 16, 10, 3);
-    rect(104, y + 65, 10, 5, 2);
-    rect(126, y + 65, 10, 5, 2);
-    rect(108, y + 71, 2, 3, 1);
-    rect(130, y + 71, 2, 3, 1);
-    rect(118, y + 56, 4, 14, 2);
+    if (!loaf) {
+        rect(101, y + 64, 16, 10, 3);
+        rect(123, y + 64, 16, 10, 3);
+        rect(104, y + 65, 10, 5, 2);
+        rect(126, y + 65, 10, 5, 2);
+        rect(108, y + 71, 2, 3, 1);
+        rect(130, y + 71, 2, 3, 1);
+        rect(118, y + 56, 4, 14, 2);
+    }
+    if (pose == POSE_GROOM) {
+        int paw_y = y + 37 + (beat ? 0 : 4);
+        rect(139, paw_y, 8, 17, 3);
+        rect(141, paw_y, 4, 9, 2);
+        rect(139, paw_y + 3, 8, 2, 1);
+    }
+    if (pose == POSE_SECRET) {
+        rect(82, y + 42, 8, 9, 3);
+        rect(151, y + 42, 8, 9, 3);
+        rect(84, y + 42, 4, 4, 2);
+        rect(153, y + 42, 4, 4, 2);
+    }
     text(12, 179, message, 3);
     const char *items[] = {"FEED", "PLAY", "SLEEP", "PET"};
     for (int i = 0; i < 4; i++) {
